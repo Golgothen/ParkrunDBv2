@@ -1,5 +1,6 @@
 import pyodbc, logging, logging.config
 
+
 xstr = lambda s: 'NULL' if s is None else str(s)
 
 class Connection():
@@ -9,7 +10,7 @@ class Connection():
         #database = 'Parkrun'
         #userstring = 'Trusted_Connection=yes'
         #driver = 'SQL Server Native Client 11.0'
-        self.connectString = 'DRIVER='+driver+';SERVER='+server+';DATABASE='+database+';'+userstring
+        self.connectString = 'DRIVER='+driver+';SERVER='+server+';DATABASE='+database+';'+userString
         pyodbc.pooling = False
 
         self.conn = pyodbc.connect(self.connectString)
