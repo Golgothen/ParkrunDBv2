@@ -1,4 +1,6 @@
-import multiprocessing, multiprocessing.queues, threading, requests, logging, logging.config
+import requests, logging, logging.config, threading
+from multiprocessing import Process, Queue, Pipe, Event
+from threading import Thread
 from bs4 import BeautifulSoup as soup
 import lxml.html
 from urllib.request import urlopen, Request #, localhost
@@ -18,8 +20,6 @@ class Crawler():
         self.thread_count = 5
         self.headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36'}
         self.config = config
-        logging.config.dictConfig(config)
-        self.logger = logging.getLogger(__name__)
 
     def getProxies(self):
         # Subclasses will provide this code and put their results into the self.proxyQue
@@ -113,7 +113,7 @@ class NonDupeQueue(multiprocessing.queues.Queue):
 """
 
            
-class ProxyManager(multiprocessing.Process):
+class ProxyManager(Process):
     
     """
     ProxyManager will be responsible for maintaining a list of available and valid proxies.
@@ -125,14 +125,16 @@ class ProxyManager(multiprocessing.Process):
         super(ProxyManager, self).__init__()
         self.crawlers = []
         self.__crawler_threads = []
-        self.__proxies = multiprocessing.Queue()
-        self.__untested_proxies = multiprocessing.Queue()
+        self.__proxies = Queue()
+        self.__untested_proxies = Queue()
         self.__min_proxy_count = 3
         self.__exitEvent = exitEvent
         self.__proxyList = []
         self.__tester_thread_count = 50
         self.__tester_threads = []
+        self.__getter_threads = []
         self.config = config
+        self.logger = None
     
     def addCrawler(self, newCrawler):
         # Add the new crawler to the list of crawlers
@@ -187,7 +189,7 @@ class ProxyManager(multiprocessing.Process):
                 if not running:
                     print('Starting crawler {}'.format(i.name))
                     # start any crawlers that didn't have matching threads (by name)
-                    x = threading.Thread(target = i.getProxies, daemon = True, name = i.name)
+                    x = Thread(target = i.getProxies, daemon = True, name = i.name)
                     self.__crawler_threads.append(x)
                     x.start()
         
@@ -195,6 +197,30 @@ class ProxyManager(multiprocessing.Process):
         x = self.__proxies.get()
         #self.__proxyList = [i for i in self.__proxyList if i != x]
         return x
+
+    def getURL(self, url, returnPipe):
+        x = Thread(target = self.__getURL, args = (url, returnPipe,), daemon = True)
+        self.__getter_threads.append(x)
+        x.start()
+    
+    def __getURL(self, url, returnPipe):
+        completed = False
+        proxy = self.getProxy()
+        while not completed:
+            #self.logger.debug(f"Hitting {url} with proxy {proxy['proxy']}")
+            try:
+                response = requests.get(url, proxies={"http": proxy['proxy'], "https": proxy['proxy']}, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36'}, timeout = 10)
+            except:
+                proxy = self.getProxy()
+                continue
+            if response.code != 200:
+                proxy = self.getProxy()
+                continue
+            completed = True
+            self.__proxies.put(proxy)       # Put the proxy back in the queue if it worked
+        temp = response.text#.decode('utf-8', errors='ignore')
+        returnPipe.send(lxml.html.fromstring(temp)) 
+
     
     def run(self):
         logging.config.dictConfig(self.config)
@@ -202,12 +228,12 @@ class ProxyManager(multiprocessing.Process):
         self.addCrawler(FreeProxyList(self.__untested_proxies, self.config))
         self.addCrawler(ProxyScrape(self.__untested_proxies, self.config))
         for i in range(self.__tester_thread_count):
-            self.__tester_threads.append(threading.Thread(target = self.testProxy, name = 'Tester {}'.format(i), daemon = True)) 
+            self.__tester_threads.append(Thread(target = self.testProxy, name = 'Tester {}'.format(i), daemon = True)) 
             self.__tester_threads[i].start()
         #self.__proxies = NonDupeQueue()
         print(f'run(): {hex(id(self.crawlers))}')
         for i in self.crawlers:
-            x = threading.Thread(target = i.getProxies, daemon = True, name = i.name)
+            x = Thread(target = i.getProxies, daemon = True, name = i.name)
             self.__crawler_threads.append(x)
             x.start()
         self.__exitEvent.wait()
