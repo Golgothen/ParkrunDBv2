@@ -2,12 +2,14 @@
 from mplogger import *
 #from parkrundb import *
 from proxymanager import *
+from message import *
+from httpget import *
 
-
+"""
 def geturi(l):
     pm.getURL(l['url'], l['sender'])
     l['result'] = l['receiver'].recv()
-
+"""
 
 loggingQueue = Queue()
 
@@ -20,25 +22,20 @@ logging.config.dictConfig(config)
 logger = logging.getLogger('application')
 
 #p = ParkrunDB(config)
-exitEvent = Event()
+e = Event()
 
-pm = ProxyManager(exitEvent, config)
+pm = ProxyManager(e, config,)
 pm.start()
 
+athleteid = 1831490
+eventURL = 'berwicksprings'
+for eventNumber in range(1,10):
+    p = EventResult(url = f'http://www.parkrun.com.au/{eventURL}/results/weeklyresults/?runSeqNumber={eventNumber}')
+    c = Connection(host = 'localhost', port = 3000, config = config)
+    
+    m = Message('OBJECT', OBJ = p)
+    c.send(m)
+    x = c.recv()
 
-l = []
-sender, receiver = Pipe()
-l.append({'url':'www.microsoft.com', 'sender':sender, 'receiver':receiver, 'result': None})
-sender, receiver = Pipe()
-l.append({'url':'www.google.com', 'sender':sender, 'receiver':receiver, 'result': None})
-sender, receiver = Pipe()
-l.append({'url':'www.github.com', 'sender':sender, 'receiver':receiver, 'result': None})
 
-for i in l:
-    i['thread'] = Thread(target = geturi, args = (i,), daemon = True)
-    i['thread'].start()
-
-for i in l:
-    i['thread'].join()
-
-print(i)
+    

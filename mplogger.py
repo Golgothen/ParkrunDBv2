@@ -13,24 +13,15 @@ sender_config = {
     },
     'loggers': {
         'application': {
-            'level':       'INFO',
-        },
-        'checkhistory': {
             'level':       'DEBUG',
         },
-        'worker': {
-            'level':       'INFO',
-        },
-        'parkrunlist': {
+        'proxymanager': {
             'level':       'DEBUG',
         },
-        'parkruncalendar': {
-            'level':       'DEBUG',
-        },
-        'dbconnection': {
+        'tcpconnection': {
             'level':       'INFO',
         },
-        'pathfinder': {
+        'httpget': {
             'level':       'DEBUG',
         },
     },
