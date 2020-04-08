@@ -1,4 +1,4 @@
-import requests, logging, logging.config, threading, socket
+import requests, threading, socket #,logging, logging.config
 from multiprocessing import Process, Queue, Pipe, Event
 #from multiprocessing.pool import ThreadPool
 from threading import Thread
@@ -60,8 +60,9 @@ class FreeProxyList(Crawler):
                 if https == 'yes':
                     self.untestedProxies.put({'proxy':ip + ':' + port, 'source':self.name})
             self.logger.debug(f'Crawler {self.name} complete. Testing.')
-        except:
+        except Exception as e:
             self.logger.info(f'Crawler {self.name} failed.')
+            self.logger.debug(f'Exception {e}')
             
 
 class SpyOne(Crawler):
@@ -86,8 +87,9 @@ class SpyOne(Crawler):
                 self.untestedProxies.put({'proxy':ip + ':' + port, 'source':self.name})
             
             self.logger.debug(f'Crawler {self.name} complete')
-        except:
+        except Exception as e:
             self.logger.debug(f'Crawler {self.name} failed')
+            self.logger.debug(f'Exception {e}')
 
 
 
@@ -155,8 +157,7 @@ class ProxyManager(Process):
                 self.__proxies.put(proxy['proxy'])
                 self.logger.debug(f'Thread {threading.currentThread().getName()} added {proxy["proxy"]} from {proxy["source"]}. {self.__untested_proxies.qsize()} proxies remain untested')
             except:
-                pass
-                #print('Thread {} skipped {} from {}'.format(threading.currentThread().getName(),proxy['proxy'], proxy['source']))
+                self.logger.debug(f"Thread {threading.currentThread().getName()} skipped {proxy['proxy']} from {proxy['source']}")
                 
     def renewProxies(self):
         self.logger.debug(f'Proxy queue size is {self.__proxies.qsize()}')
@@ -197,6 +198,8 @@ class ProxyManager(Process):
 
     
     def run(self):
+        logging.config.dictConfig(self.config)
+        self.logger = logging.getLogger(__name__)
         def listenerThread():
             self.running = True
             server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -218,8 +221,9 @@ class ProxyManager(Process):
                 return
             if m.message.upper() == 'OBJECT':
                 HTTPObj = m.params['OBJ']
-                if HTTPObj.proxy == None:
-                    HTTPObj.proxy = self.getProxy()
+                if HTTPObj.useproxy:
+                    if HTTPObj.proxy == None:
+                        HTTPObj.proxy = self.getProxy()
                 processed = False
                 while not processed:
                     try:
@@ -233,8 +237,6 @@ class ProxyManager(Process):
                 self.logger.debug(f'Closing connection with {socket[1][0]}')
                 s.close()
 
-        logging.config.dictConfig(self.config)
-        self.logger = logging.getLogger(__name__)
         self.addCrawler(FreeProxyList(self.__untested_proxies, self.config))
         self.addCrawler(ProxyScrape(self.__untested_proxies, self.config))
         for i in range(self.__tester_thread_count):

@@ -1,8 +1,8 @@
-from mplogger import *
 import requests, lxml
-
+from datetime import datetime
 class BadProxy(Exception):
     pass
+
 class URLFail(Exception):
     pass
 
@@ -12,17 +12,18 @@ class HTTPGet(object):
         self.user_agent = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36'}
         self.timeout = 10
         self.proxy = None
+        self.useproxy = True
         for k in kwargs:
             x = k.lower()
             self.__dict__[x] = kwargs[k]
         
         if 'url' not in self.__dict__:
             raise ValueError('Mandatory parameter URL missing.')
-        #if 'logger' not in self.__dict__:
+        #if 'config' not in self.__dict__:
         #    raise ValueError('Mandatory parameter LOGGER missing.')
         #else:
-            #logging.config.dictConfig(self.config)
-            #self.logger = logger #logging.getLogger(__name__)
+        #    logging.config.dictConfig(self.config)
+        #    self.logger = logging.getLogger(__name__)
     
     def parse(self):
         try:
@@ -33,15 +34,17 @@ class HTTPGet(object):
                 response = requests.get(self.url, headers=self.user_agent, timeout = self.timeout)
             #self.logger.debug(f'Got response code {response.status_code}')
             if response.status_code != 200:
-                print(f'Response code was {response.status_code}')
+                #self.logger.debug(f'Response code was {response.status_code}')
                 if self.proxy is not None:
                     raise BadProxy
                 else:
                     raise URLFail
             else:
-                return lxml.html.fromstring(response.text)
+                x = lxml.html.fromstring(response.text)
+                #self.logger.debug(f'Returning {len(x)} bytes.')
+                return x
         except Exception as e:
-            print(f'Exception {e}')
+            #self.logger.debug(f'Exception {e}')
             if self.proxy is not None:
                 raise BadProxy
             else:

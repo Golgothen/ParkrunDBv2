@@ -8,11 +8,16 @@ class ParkrunDB():
     def __init__(self, config):
         self.__config = config
         self.__con = Connection(config, 'localhost', 'Parkrun', 'Trusted_Connection=yes', 'SQL Server Native Client 11.0')
+        self.config = config
         logging.config.dictConfig(config)
-        self.logger = logging.getlogger(__name__)
+        self.logger = logging.getLogger(__name__)
     
+    def execute(self, sql):
+        return self.__con.execute(sql)
+        
+
     def getParkrunID(self, parkrunName):
-        return self.__con.execute("SELECT dbo.getParkrunID('{}')".format(parkrunName))
+        return self.__con.execute(f"SELECT dbo.getParkrunID('{parkrunName}')")
 
     def getAgeCatID(self, a):
         if a is None:
