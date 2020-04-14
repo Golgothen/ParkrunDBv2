@@ -24,6 +24,7 @@ class Connection():
         self.config = config
         logging.config.dictConfig(config)
         self.logger = logging.getLogger(__name__)
+        self.logger.debug(f"Logger {__name__} started")
         
     
     def execute(self, sql):
@@ -31,7 +32,7 @@ class Connection():
         c = None
         try:
             if sql[:6].upper() == "SELECT":
-                if "FROM" in sql.upper():
+                if "SELECT DBO." not in sql.upper():
                     data = []
                     headings = []
                     c = self.conn.execute(sql)
@@ -48,7 +49,9 @@ class Connection():
                         return None
                 else:
                     c = self.conn.execute(sql)
-                    return c.fetchall()[0][0]
+                    r = c.fetchall()[0][0]
+                    self.logger.debug(f"Scalar function returned {r}")
+                    return r
             if sql[:6].upper() == "INSERT":
                 c = self.conn.execute(sql)
                 c = self.conn.execute("SELECT SCOPE_IDENTITY()")
