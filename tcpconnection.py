@@ -31,6 +31,7 @@ class Connection():
         else:
             logging.config.dictConfig(config)
             self.logger = logging.getLogger(__name__)
+            self.logger.debug(f"Logger {__name__} started")
         
         if sock is None:
             self.logger.debug('Creating a new socket')
@@ -46,7 +47,7 @@ class Connection():
     def connect(self):
         if not self.connected:
             try:
-                self.logger.debug('Connecting to {}:{}'.format(self.host, self.port))
+                self.logger.info('Connecting to {}:{}'.format(self.host, self.port))
                 self.socket.connect((self.host, self.port))
             except:
                 self.close()

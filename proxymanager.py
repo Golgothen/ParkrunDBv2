@@ -21,19 +21,51 @@ class Crawler():
     Subclasses of this class will have the specific code needed for interpreting each web page table
     """
     
-    def __init__(self, name, newProxies, config):
+    def __init__(self, name, proxies, config):
         self.name = name
-        self.untestedProxies = newProxies
-        self.thread_count = 5
+        self.untestedProxies = Queue()
+        self.proxies = proxies
+        self.thread_count = 10
         self.headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36'}
         self.config = config
         logging.config.dictConfig(self.config)
         self.logger = logging.getLogger(__name__)
+        self.logger.debug(f"Logger {__name__} started")
+        self.__timeout = 10
 
     def getProxies(self):
         # Subclasses will provide this code and put their results into the self.proxyQue
-        self.logger.debug(f'Crawler {self.name} scanning for proxies')
+        self.logger.info(f'Crawler {self.name} scanning for proxies')
     
+    def test(self):
+        for i in range(self.thread_count):
+            self.untestedProxies.put(None)
+        t = []
+        self.logger.info(f'Crawler {self.name} testing proxies')
+        for i in range(self.thread_count):
+            t.append(Thread(target = self.testProxy, name = f'Tester {self.name}_{i}', daemon = True)) 
+            t[i].start()
+        
+        for i in range(self.thread_count):
+            t[i].join()
+        
+    def testProxy(self): 
+        while True:
+            #self.logger.debug(f'{self.__untested_proxies.qsize()} proxies remain untested')
+            if self.untestedProxies.qsize() == 0:
+                break
+            proxy = self.untestedProxies.get()
+            if proxy == None:
+                break
+            #print('Thread {} Testing {}'.format(threading.currentThread().getName(),proxy))
+            try:
+                self.logger.debug(f'Thread {threading.currentThread().getName()} testing {proxy["proxy"]} from {proxy["source"]}. {self.untestedProxies.qsize()} proxies remain untested')
+                response = requests.get('https://httpbin.org/ip', proxies={"http": proxy['proxy'], "https": proxy['proxy']}, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36'},  timeout = self.__timeout)
+                self.proxies.put(proxy['proxy'])
+                self.logger.info(f'Thread {threading.currentThread().getName()} added {proxy["proxy"]} from {proxy["source"]}. {self.untestedProxies.qsize()} proxies remain untested')
+            except Exception as e:
+                #print(e)
+                self.logger.debug(f"Thread {threading.currentThread().getName()} skipped {proxy['proxy']} from {proxy['source']}")
 
 
 class FreeProxyList(Crawler):
@@ -59,10 +91,13 @@ class FreeProxyList(Crawler):
                 #print("ip address : {:<15}   port : {:<5}   https : {:<3} ".format(ip, port, https))
                 if https == 'yes':
                     self.untestedProxies.put({'proxy':ip + ':' + port, 'source':self.name})
-            self.logger.debug(f'Crawler {self.name} complete. Testing.')
+            self.logger.info(f'Crawler {self.name} complete.')
         except Exception as e:
-            self.logger.info(f'Crawler {self.name} failed.')
-            self.logger.debug(f'Exception {e}')
+            self.logger.warning(f'Crawler {self.name} failed.')
+            self.logger.warning(f'Exception {e}')
+        self.logger.info(f'Crawler {self.name} testing')
+        super().test()
+        self.logger.info(f'Crawler {self.name} testing completed')
             
 
 class SpyOne(Crawler):
@@ -86,10 +121,11 @@ class SpyOne(Crawler):
                 port = '8080'
                 self.untestedProxies.put({'proxy':ip + ':' + port, 'source':self.name})
             
-            self.logger.debug(f'Crawler {self.name} complete')
+            self.logger.info(f'Crawler {self.name} complete')
         except Exception as e:
-            self.logger.debug(f'Crawler {self.name} failed')
-            self.logger.debug(f'Exception {e}')
+            self.logger.warning(f'Crawler {self.name} failed')
+            self.logger.warning(f'Exception {e}')
+        super().test()
 
 
 
@@ -107,10 +143,38 @@ class ProxyScrape(Crawler):
         response = requests.get('https://api.proxyscrape.com/?request=getproxies&proxytype=http&timeout=10000&country=all&ssl=all&anonymity=all', headers = self.headers)
         lx = lxml.html.fromstring(response.text)
         l = lx.text.split('\r\n')
-        for i in l[:100]:
+        for i in l[:300]:
             self.untestedProxies.put({'proxy':i, 'source':self.name})
-        self.logger.debug(f'Crawler {self.name} complete')
+        self.logger.info(f'Crawler {self.name} complete')
+        self.logger.info(f'Crawler {self.name} testing')
+        super().test()
+        self.logger.info(f'Crawler {self.name} testing completed')
+
+class ProxyListDownload(Crawler):
     
+    """
+    ProxyListDownload scrapes proxy information from https://proxy-list.download
+    """
+    
+    def __init__(self, untestedProxies, config):
+        super().__init__('Proxy_List_Download', untestedProxies, config)
+    
+    def getProxies(self):
+        super().getProxies()
+        try:
+            response = requests.get('https://www.proxy-list.download/api/v1/get?type=http', self.headers)
+            lx = lxml.html.fromstring(response.text)
+            l = lx.text.split('\r\n')
+            for i in l:
+                self.untestedProxies.put({'proxy':i, 'source':self.name})
+            self.logger.info(f'Crawler {self.name} complete')
+        except Exception as e:
+            self.logger.warning(f'Crawler {self.name} failed.')
+            self.logger.warning(f'Exception {e}')
+        self.logger.info(f'Crawler {self.name} testing')
+        super().test()
+        self.logger.info(f'Crawler {self.name} testing completed')
+
            
 class ProxyManager(Process):
     
@@ -120,18 +184,19 @@ class ProxyManager(Process):
     If the que drops below a pre-defined threshold, all subclasses of crawlers will be invoked to collect more proxies.
     """
     
-    def __init__(self, exitEvent, config):
+    def __init__(self, exitEvent, config, min_count):
         super(ProxyManager, self).__init__()
         self.crawlers = []
         self.__crawler_threads = []
         self.__proxies = Queue()
-        self.__untested_proxies = Queue()
-        self.__min_proxy_count = 3
+        #self.__untested_proxies = Queue()
+        self.__min_proxy_count = min_count
         self.__exitEvent = exitEvent
         self.__tester_thread_count = 30
         self.__tester_threads = []
         self.config = config
         self.logger = None
+        self.useproxy = True
         self.__timeout = 10
         
     
@@ -142,6 +207,7 @@ class ProxyManager(Process):
     def getProxyCount(self):
         return self.__proxies.qsize()
     
+    """
     def __testProxy(self): 
         while True:
             #self.logger.debug(f'{self.__untested_proxies.qsize()} proxies remain untested')
@@ -155,18 +221,22 @@ class ProxyManager(Process):
                 #self.logger.debug(f'Thread {threading.currentThread().getName()} testing {proxy["proxy"]} from {proxy["source"]}. {self.__untested_proxies.qsize()} proxies remain untested')
                 response = requests.get('https://httpbin.org/ip', proxies={"http": proxy['proxy'], "https": proxy['proxy']}, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36'},  timeout = self.__timeout)
                 self.__proxies.put(proxy['proxy'])
-                self.logger.debug(f'Thread {threading.currentThread().getName()} added {proxy["proxy"]} from {proxy["source"]}. {self.__untested_proxies.qsize()} proxies remain untested')
+                self.logger.info(f'Thread {threading.currentThread().getName()} added {proxy["proxy"]} from {proxy["source"]}. {self.__untested_proxies.qsize()} proxies remain untested')
             except:
                 self.logger.debug(f"Thread {threading.currentThread().getName()} skipped {proxy['proxy']} from {proxy['source']}")
-                
+    """
+             
     def renewProxies(self):
-        self.logger.debug(f'Proxy queue size is {self.__proxies.qsize()}')
+        self.logger.info(f'Proxy queue size is {self.__proxies.qsize()}')
+        self.__crawler_threads = [x for x in self.__crawler_threads if x.isAlive()]
+        self.logger.info(f"{len(self.__crawler_threads)} crawlers running")
         if self.__proxies.qsize() <= self.__min_proxy_count:
             # Iterate through the available crawlers
-            self.logger.debug('Starting new crawlers')
+            self.logger.info('Starting new crawlers')
             #self.logger.debug(f'getProxy() : {hex(id(self.crawlers))}')
             #self.logger.debug(len(self.crawlers))
             self.__crawler_threads = [x for x in self.__crawler_threads if x.isAlive()]
+            self.logger.info(f"{len(self.__crawler_threads)} crawlers running")
             for i in self.crawlers:
                 running = False
                 # see if there is a thread with the same name
@@ -175,16 +245,19 @@ class ProxyManager(Process):
                     if j.name == i.name and j.isAlive():
                         # a thread by the same name was found, so don't start it again
                         running = True
-                        self.logger.debug('Crawler {} already running'.format(i.name))
+                        self.logger.info('Crawler {} already running'.format(i.name))
                         #print(j.isAlive())
+                        break
                 if not running:
                     self.logger.debug('Starting crawler {}'.format(i.name))
                     # start any crawlers that didn't have matching threads (by name)
-                    x = Thread(target = i.getProxies, daemon = True, name = i.name)
+                    x = Thread(target = i.getProxies, name = i.name, daemon = True)
                     self.__crawler_threads.append(x)
                     x.start()
+        """
         while self.__proxies.qsize() <= self.__min_proxy_count:
             sleep(1)
+        """
     
     def getProxy(self):
         # Check if there are sufficient proxies in the 
@@ -200,6 +273,7 @@ class ProxyManager(Process):
     def run(self):
         logging.config.dictConfig(self.config)
         self.logger = logging.getLogger(__name__)
+        self.logger.debug(f"Logger {__name__} started")
         def listenerThread():
             self.running = True
             server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -221,6 +295,10 @@ class ProxyManager(Process):
                 return
             if m.message.upper() == 'OBJECT':
                 HTTPObj = m.params['OBJ']
+                logging.config.dictConfig(self.config)
+                #print(type(HTTPObj).__name__)
+                HTTPObj.logger = logging.getLogger(type(HTTPObj).__name__)
+                HTTPObj.logger.debug(f"Logger {type(HTTPObj).__name__} started")
                 if HTTPObj.useproxy:
                     if HTTPObj.proxy == None:
                         HTTPObj.proxy = self.getProxy()
@@ -232,16 +310,21 @@ class ProxyManager(Process):
                         HTTPObj.proxy = self.getProxy()
                         continue
                     processed = True
-                    self.logger.debug(f'Returning {HTTPObj.proxy} to working queue.')
-                    self.__proxies.put(HTTPObj.proxy)
+                    if HTTPObj.useproxy:
+                        self.logger.debug(f'Returning {HTTPObj.proxy} to working queue.')
+                        self.__proxies.put(HTTPObj.proxy)
                 self.logger.debug(f'Closing connection with {socket[1][0]}')
                 s.close()
-
-        self.addCrawler(FreeProxyList(self.__untested_proxies, self.config))
-        self.addCrawler(ProxyScrape(self.__untested_proxies, self.config))
-        for i in range(self.__tester_thread_count):
-            self.__tester_threads.append(Thread(target = self.__testProxy, name = 'Tester {}'.format(i), daemon = True)) 
-            self.__tester_threads[i].start()
+        
+        if self.useproxy:
+            self.addCrawler(FreeProxyList(self.__proxies, self.config))
+            self.addCrawler(ProxyScrape(self.__proxies, self.config))
+            self.addCrawler(ProxyListDownload(self.__proxies, self.config))
+            """
+            for i in range(self.__tester_thread_count):
+                self.__tester_threads.append(Thread(target = self.__testProxy, name = 'Tester {}'.format(i), daemon = True)) 
+                self.__tester_threads[i].start()
+            """
         #self.__proxies = NonDupeQueue()
         #print(f'run(): {hex(id(self.crawlers))}')
         #for i in self.crawlers:
@@ -252,11 +335,10 @@ class ProxyManager(Process):
         ps.start()
          
         while not self.__exitEvent.is_set():
-            self.renewProxies()
+            if self.useproxy:
+                self.renewProxies()
             sleep(15)
         print('ProxyManager exiting')
         self.running = False
-        while self.__untested_proxies.qsize() > 0:
-            x = self.__untested_proxies.get()
         while self.__proxies.qsize() > 0:
             x = self.__proxies.get()
