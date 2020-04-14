@@ -1,5 +1,7 @@
-import requests, lxml
+import requests, lxml, lxml.html
 from datetime import datetime
+from time import sleep
+
 class BadProxy(Exception):
     pass
 
@@ -10,7 +12,7 @@ class HTTPGet(object):
     
     def __init__(self, **kwargs):
         self.user_agent = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36'}
-        self.timeout = 10
+        self.timeout = 30
         self.proxy = None
         self.useproxy = True
         for k in kwargs:
@@ -23,11 +25,11 @@ class HTTPGet(object):
         #    raise ValueError('Mandatory parameter LOGGER missing.')
         #else:
         #    logging.config.dictConfig(self.config)
-        #    self.logger = logging.getLogger(__name__)
+            self.logger = None
     
     def parse(self):
         try:
-            print(f"Hitting {self.url} via {self.proxy}")
+            self.logger.debug(f"Hitting {self.url} via {self.proxy}")
             if self.proxy is not None:
                 response = requests.get(self.url, proxies={"http": self.proxy, "https": self.proxy}, headers=self.user_agent, timeout = self.timeout)
             else:
@@ -36,15 +38,17 @@ class HTTPGet(object):
             if response.status_code != 200:
                 #self.logger.debug(f'Response code was {response.status_code}')
                 if self.proxy is not None:
+                    self.logger.debug(f"Response code was {response.status_code}")
                     raise BadProxy
                 else:
                     raise URLFail
             else:
-                x = lxml.html.fromstring(response.text)
-                #self.logger.debug(f'Returning {len(x)} bytes.')
-                return x
+                self.logger.debug(f'Returning {len(response.text)} bytes.')
+                #self.logger.shutdown()
+                return response.text
         except Exception as e:
-            #self.logger.debug(f'Exception {e}')
+            self.logger.debug(f'Exception {e}')
+            #self.logger.shutdown()
             if self.proxy is not None:
                 raise BadProxy
             else:
@@ -69,7 +73,7 @@ class AthleteHistory(HTTPGet):
     
     def parse(self):
         try:
-            html = super().parse()
+            html = lxml.html.fromstring(super().parse())
         except:
             raise
         athlete = {}
@@ -106,12 +110,12 @@ class EventResult(HTTPGet):
     
     def parse(self):
         try:
-            html = super().parse()
+            html = lxml.html.fromstring(super().parse())
         except:
             raise
         
         table = html.xpath('//*[@id="content"]/div[1]/table')[0]
-        headings = ['Pos','parkrunner','Gender','Age Cat','Club','Time']
+        headings = ['Pos','parkrunner','Gender','AgeCat','Club','Time']
         
         rows = table.xpath('//tbody/tr')
         
@@ -130,8 +134,8 @@ class EventResult(HTTPGet):
                             d['LastName'] = None
                             d['AthleteID'] = 0
                             d['Time'] = None
-                            d['Age Cat'] = None
-                            d['Age Grade'] = None
+                            d['AgeCat'] = None
+                            d['AgeGrade'] = None
                             d['Club'] = None
                             d['Note'] = None
                             break
@@ -152,8 +156,8 @@ class EventResult(HTTPGet):
                         d['LastName'] = None
                         d['AthleteID'] = 0
                         d['Time'] = None
-                        d['Age Cat'] = None
-                        d['Age Grade'] = None
+                        d['AgeCat'] = None
+                        d['AgeGrade'] = None
                         d['Club'] = None
                         d['Note'] = None
                         break
@@ -163,17 +167,17 @@ class EventResult(HTTPGet):
                         d['Gender'] = v[0].text.strip()[0]
                     else:
                         d['Gender'] = 'M'
-                if h == 'Age Cat':
+                if h == 'AgeCat':
                     if len(v)>0:
                         # 30/10/19 - Age Category and Age Grade are now in the same cell
-                        d['Age Cat'] = v[0][0].text
+                        d['AgeCat'] = v[0][0].text
                         if len(v) > 1:
-                            d['Age Grade'] = float(v[1].text.split('%')[0])
+                            d['AgeGrade'] = float(v[1].text.split('%')[0])
                         else:
-                            d['Age Grade'] = None
+                            d['AgeGrade'] = None
                     else:
-                        d['Age Cat'] = None
-                        d['Age Grade'] = None
+                        d['AgeCat'] = None
+                        d['AgeGrade'] = None
                 if h == 'Club':
                     if len(v)>0:
                         if v[0][0].text is not None:
@@ -204,26 +208,26 @@ class EventHistory(HTTPGet):
     
     def parse(self):
         try:
-            html = super().parse()
+            html = lxml.html.fromstring(super().parse())
         except:
             raise
-        table = html.xpath('//*[@id="results"]')[0]
+        table = html.xpath('//*[@id="content"]/div[1]/table')[0]
         headings = ['EventNumber','EventDate','Runners','Volunteers']    
         rows = table.xpath('//tbody/tr')
         
         data = []
         for row in rows:
             d = {}
-            for h, v in zip(headings, row.getchildren()):
+            for h, v in zip(headings, row):
                 if h == 'EventNumber':
-                    d[h] = int(v.getchildren()[0].text)
+                    d[h] = int(v[0].text)
                 if h in ['Runners','Volunteers']:
                     if v.text.strip() == 'unknown':
                         d[h] = None
                     else: 
                         d[h] = int(v.text)
                 if h == 'EventDate':
-                    d[h] = datetime.strptime(v.getchildren()[0].text,"%d/%m/%Y")
+                    d[h] = datetime.strptime(v[0].text,"%d/%m/%Y")
             data.insert(0,d)
         return data
         
