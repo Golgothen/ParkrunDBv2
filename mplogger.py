@@ -16,13 +16,31 @@ sender_config = {
             'level':       'DEBUG',
         },
         'proxymanager': {
-            'level':       'DEBUG',
+            'level':       'INFO',
         },
         'tcpconnection': {
-            'level':       'INFO',
+            'level':       'WARNING',
         },
         'httpget': {
             'level':       'DEBUG',
+        },
+        'AthleteHistory': {
+            'level':       'INFO',
+        },
+        'EventResult': {
+            'level':       'INFO',
+        },
+        'EventHistory': {
+            'level':       'INFO',
+        },
+        'dbconnection': {
+            'level':       'INFO',
+        },
+        'test': {
+            'level':       'INFO',
+        },
+        'parkrundb': {
+            'level':       'INFO',
         },
     },
     'root': {
